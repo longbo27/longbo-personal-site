@@ -92,21 +92,31 @@ export function parseUA(ua) {
   let device = 'desktop';
   if (/iPad|Tablet|PlayBook|Silk|(Android(?!.*Mobile))/i.test(ua)) device = 'tablet';
   else if (/Mobi|iPhone|iPod|Android|Windows Phone|IEMobile|Opera Mini/i.test(ua)) device = 'mobile';
-  let os = 'Other';
-  if (/iPhone|iPod/.test(ua)) os = 'iOS';
+
+  let os = 'Other', m;
+  if ((m = ua.match(/(?:iPhone|iPod)[^)]*?OS (\d+)[_.](\d+)/))) os = `iOS ${m[1]}.${m[2]}`;
+  else if (/iPhone|iPod/.test(ua)) os = 'iOS';
+  else if ((m = ua.match(/iPad[^)]*?OS (\d+)[_.](\d+)/))) os = `iPadOS ${m[1]}.${m[2]}`;
   else if (/iPad/.test(ua)) os = 'iPadOS';
+  else if (/HarmonyOS|OpenHarmony/i.test(ua)) os = 'HarmonyOS';
+  else if ((m = ua.match(/Android (\d+(?:\.\d+)?)/))) os = `Android ${m[1]}`;
   else if (/Android/.test(ua)) os = 'Android';
   else if (/CrOS/.test(ua)) os = 'ChromeOS';
   else if (/Windows/.test(ua)) os = 'Windows';
   else if (/Mac OS X|Macintosh/.test(ua)) os = 'macOS';
-  else if (/HarmonyOS/i.test(ua)) os = 'HarmonyOS';
   else if (/Linux/.test(ua)) os = 'Linux';
+
+  // In-app browsers first: they wrap Safari/Chrome and would otherwise be mislabelled.
   let browser = 'Other';
   const rules = [
-    [/MicroMessenger/i, 'WeChat'], [/LinkedInApp/i, 'LinkedIn app'], [/FBAN|FBAV|Instagram/i, 'Meta app'],
-    [/Edg\//, 'Edge'], [/OPR\/|Opera/, 'Opera'], [/SamsungBrowser/, 'Samsung Internet'],
-    [/UCBrowser/, 'UC'], [/QQBrowser/, 'QQ'], [/Quark/i, 'Quark'], [/Firefox\/|FxiOS/, 'Firefox'],
-    [/CriOS|Chrome\//, 'Chrome'], [/Safari\//, 'Safari']
+    [/MicroMessenger|WeChat/i, 'WeChat'], [/\bQQ\/\d/, 'QQ'], [/MQQBrowser/, 'QQ Browser'], [/Weibo/i, 'Weibo'],
+    [/aweme|BytedanceWebview|Douyin/i, 'Douyin'], [/musical_ly|TikTok/i, 'TikTok'], [/xhsdiscover|XiaoHongShu/i, 'Xiaohongshu'],
+    [/DingTalk/i, 'DingTalk'], [/Lark|Feishu/i, 'Feishu/Lark'], [/AlipayClient/i, 'Alipay'], [/baiduboxapp/i, 'Baidu app'],
+    [/LinkedInApp/i, 'LinkedIn app'], [/Instagram/i, 'Instagram app'], [/FBAN|FBAV/i, 'Facebook app'], [/Twitter/i, 'X app'],
+    [/Snapchat/i, 'Snapchat'], [/\bLine\//, 'LINE'], [/Telegram/i, 'Telegram'], [/GSA\//, 'Google app'],
+    [/Edg[A]?\/|EdgiOS/, 'Edge'], [/OPR\/|Opera/, 'Opera'], [/SamsungBrowser/, 'Samsung Internet'], [/UCBrowser/, 'UC'],
+    [/Quark/i, 'Quark'], [/HuaweiBrowser/i, 'Huawei Browser'], [/MiuiBrowser/i, 'Xiaomi Browser'], [/Firefox\/|FxiOS/, 'Firefox'],
+    [/CriOS|Chrome\//, 'Chrome'], [/Version\/[\d.]+.*Safari\//, 'Safari'], [/AppleWebKit/, 'WebView']
   ];
   for (const [re, name] of rules) if (re.test(ua)) { browser = name; break; }
   return { device, os, browser };

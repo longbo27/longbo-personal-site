@@ -64,7 +64,55 @@
   }
 
   function parseInfo(v) { try { return JSON.parse(v.info || '{}'); } catch (e) { return {}; } }
-  function model(v) { return parseInfo(v).model || ''; }
+  // iPhones hide their model; the screen size in points plus pixel ratio narrows it to a family.
+  var IPHONES = {
+    '320x568@2': 'iPhone SE (1st) / 5s', '375x667@2': 'iPhone SE (2nd/3rd) / 6–8', '414x736@3': 'iPhone 6–8 Plus',
+    '375x812@3': 'iPhone X / XS / 11 Pro / 12–13 mini', '414x896@2': 'iPhone XR / 11', '414x896@3': 'iPhone XS Max / 11 Pro Max',
+    '390x844@3': 'iPhone 12–14 / 13 Pro / 16e', '428x926@3': 'iPhone 12–13 Pro Max / 14 Plus', '393x852@3': 'iPhone 14 Pro / 15 / 15 Pro / 16',
+    '430x932@3': 'iPhone 14 Pro Max / 15 Plus / 15 Pro Max / 16 Plus', '402x874@3': 'iPhone 16 Pro / 17 / 17 Pro', '420x912@3': 'iPhone Air',
+    '440x956@3': 'iPhone 16 Pro Max / 17 Pro Max'
+  };
+  function model(v) {
+    var m = parseInfo(v).model;
+    if (m) return m;
+    if (/iOS/.test(v.os || '') && v.screen) {
+      var p = String(v.screen).split('×'), w = Math.min(+p[0], +p[1]), h = Math.max(+p[0], +p[1]);
+      var g = IPHONES[w + 'x' + h + '@' + Math.round(v.dpr || 0)];
+      if (g) return g + '（按屏幕推断）';
+    }
+    return '';
+  }
+  function isOpened(v) { return !!(v.sections || v.total_ms > 0 || v.active_ms > 0); }
+  var PRELOAD_TAG = '<span class="tag warn" title="页面在后台加载但从未显示在屏幕上，通常是 QQ/微信等 App 生成链接预览，或浏览器预加载">未打开（预加载）</span>';
+
+  function deviceRows(v) {
+    var inf = parseInfo(v);
+    return [
+      ['IP', v.ip], ['ASN', v.asn ? 'AS' + v.asn + (v.asorg ? ' ' + v.asorg : '') : v.asorg],
+      ['位置', [v.city, v.region, v.postal, v.country].filter(Boolean).join(', ') + (v.lat != null ? '（约 ' + v.lat + ', ' + v.lon + '，IP 推断，城市级）' : '')],
+      ['机型', model(v)],
+      ['设备', [DEVICE[v.device] || v.device, v.os, inf.platformVersion && '系统版本 ' + inf.platformVersion, inf.arch].filter(Boolean).join(' · ')],
+      ['浏览器', [v.browser, inf.brands].filter(Boolean).join(' · ')],
+      ['硬件', [inf.cores && inf.cores + ' 核 CPU', inf.mem && '≥' + inf.mem + ' GB 内存', inf.touchPoints ? inf.touchPoints + ' 点触控' : '无触控'].filter(Boolean).join(' · ')],
+      ['屏幕', [v.screen, inf.availW && '可用 ' + inf.availW + '×' + inf.availH, v.viewport && '窗口 ' + v.viewport, v.dpr && 'DPR ' + v.dpr, inf.colorDepth && inf.colorDepth + ' 位色', inf.orientation, inf.hdr && 'HDR', inf.wideGamut && 'P3 广色域'].filter(Boolean).join(' · ')],
+      ['网络', [inf.net, inf.downlink && inf.downlink + ' Mbps', inf.rtt != null && 'RTT ' + inf.rtt + ' ms', inf.saveData && '省流量', inf.http, inf.tls, v.colo && 'Cloudflare 节点 ' + v.colo].filter(Boolean).join(' · ')],
+      ['语言', [inf.langs || v.lang, v.tz].filter(Boolean).join(' · ')],
+      ['偏好', [v.dark ? '设备深色' : '设备浅色', inf.reducedMotion && '减少动画', inf.standalone && '已添加到主屏', inf.pdf && '内置 PDF'].filter(Boolean).join(' · ')],
+      ['同意', { yes: '同意完整统计', anon: '仅匿名', none: '未询问' }[v.consent] || ''],
+      ['UA', v.ua]
+    ].filter(function (x) { return x[1]; });
+  }
+  function rowsHtml(rows) { return rows.map(function (x) { return '<div><span class="t">' + esc(x[0]) + '</span>' + esc(x[1]) + '</div>'; }).join(''); }
+  function timeline(v, events) {
+    var lines = ['<div><span class="t">0 秒</span>打开 ' + esc(v.path || '/') + (v.hash ? esc(v.hash) : '') + (v.ref ? '，来自 ' + esc(v.ref) : (v.utm_source ? '，utm ' + esc(v.utm_source) : '')) + (isOpened(v) ? '' : ' ' + PRELOAD_TAG) + '</div>'];
+    (events || []).forEach(function (ev) {
+      var t = '<span class="t">' + Math.round(ev.at_ms / 1000) + ' 秒</span>';
+      if (ev.kind === 'section') lines.push('<div>' + t + '看到 ' + esc(SECTION[ev.name] || ev.name) + '</div>');
+      else lines.push('<div>' + t + '点击「' + esc(ev.name) + '」' + (ev.section ? '（' + esc(SECTION[ev.section] || ev.section) + '）' : '') + (ev.href ? ' → ' + esc(ev.href) : '') + '</div>');
+    });
+    lines.push('<div><span class="t">' + Math.round((v.total_ms || 0) / 1000) + ' 秒</span>最后一次心跳 · 有效停留 ' + esc(secs(v.active_ms)) + ' · 最远滚动 ' + esc(v.max_scroll) + '%</div>');
+    return lines.join('');
+  }
 
   function visitsTable(rows) {
     if (!rows.length) return '<section class="card wide"><h2>最近访问</h2><div class="empty">暂无数据</div></section>';
@@ -87,6 +135,7 @@
       kpi('平均有效停留', secs(k.avg_active), delta(k.avg_active, p.avg_active, secs)) +
       kpi('平均滚动深度', Math.round(k.avg_scroll) + '%', delta(k.avg_scroll, p.avg_scroll, function (x) { return Math.round(x) + '%'; })) +
       kpi('互动率', pct(k.engaged), '<span class="d">停留 ≥10 秒、滚过一半或有点击</span>') +
+      kpi('未打开（预加载）', num(d.preloads), '<span class="d">App 链接预览或浏览器预加载，不计入其它统计</span>') +
       kpi('近 30 分钟', num(d.live.pv) + ' 次', '<span class="d">' + num(d.live.uv) + ' 位访客</span>') +
       '</div>';
     html += '<div class="grid">' + dailyChart(d);
@@ -112,11 +161,55 @@
     html += list('站点语言 / 外观', '首次加载时显示的语言与主题，以及设备的深浅色偏好', d.siteLang.map(function (r) { return { k: r.k === 'zh' ? '中文' : 'English', n: r.n, u: r.u }; }).concat(d.theme.map(function (r) { return { k: (r.k || '').replace('champagne', '香槟金').replace('night', '曜金').replace('(device dark)', '（设备深色）').replace('(device light)', '（设备浅色）'), n: r.n, u: r.u }; })));
     html += list('统计同意情况', '仅在开启访客提示弹窗时有区分；“未询问”表示当时弹窗是关闭的', d.consent, function (r) { return { yes: '同意完整统计', anon: '仅匿名（不含 IP 与设备）', none: '未询问' }[r.k] || r.k; });
     html += list('页面', '', d.paths);
+    html += '<section class="card wide" id="devices"><h2>设备</h2><div class="empty">加载中…</div></section>';
     html += visitsTable(d.visits);
     html += '</div>';
     app.innerHTML = html;
   }
   function kpi(l, v, d) { return '<div class="kpi"><div class="l">' + esc(l) + '</div><div class="v">' + esc(v) + '</div>' + d + '</div>'; }
+
+  function devicesCard(list) {
+    if (!list.length) return '<h2>设备</h2><div class="empty">暂无数据</div>';
+    var tr = list.map(function (d) {
+      var L = d.latest || {};
+      var place = flag(L.country) + [L.city, L.region, L.country].filter(Boolean).join(', ');
+      var mdl = model(L);
+      return '<tr class="dv" data-key="' + esc(d.key) + '"><td>' + esc(when(d.last)) + '</td><td>' + esc(place || '未知') + (L.ip ? '<br><code>' + esc(L.ip) + '</code>' + (d.ips.length > 1 ? ' <span class="tag">' + d.ips.length + ' 个 IP</span>' : '') : '') + (L.asorg ? '<br><span style="color:var(--muted)">' + esc(L.asorg) + '</span>' : '') + '</td>' +
+        '<td>' + esc((mdl || (DEVICE[L.device] || L.device)) ) + '<br><span style="color:var(--muted)">' + esc([L.os, L.browser, L.screen].filter(Boolean).join(' · ')) + '</span></td>' +
+        '<td>' + esc(d.opened + ' / ' + d.views) + '</td><td>' + esc(d.days) + '</td><td>' + esc(secs(d.active_ms)) + '</td><td>' + esc(d.max_scroll + '%') + '</td><td>' + esc(d.clicks) + '</td></tr>';
+    }).join('');
+    return '<h2>设备（点一行看这台设备的全部信息和每次访问）</h2><p class="sub">同一网络（IPv4 地址或 IPv6 /64 前缀）加同一浏览器标识视为一台设备，可跨天追踪。“打开”列为真正显示在屏幕上的次数 / 总加载次数。</p>' +
+      '<div class="scroll"><table><thead><tr><th>最后访问</th><th>地区 / IP / 网络</th><th>机型 / 系统 / 浏览器</th><th>打开 / 加载</th><th>天数</th><th>累计停留</th><th>最远滚动</th><th>点击</th></tr></thead><tbody>' + tr + '</tbody></table></div>';
+  }
+  function loadDevices() {
+    fetch('/admin/api/stats?devices=1&days=' + days, { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (j) { var el = document.getElementById('devices'); if (el) el.innerHTML = devicesCard(j.devices || []); })
+      .catch(function () { var el = document.getElementById('devices'); if (el) el.innerHTML = '<h2>设备</h2><div class="empty">加载失败</div>'; });
+  }
+  var dlg = document.getElementById('device');
+  function openDevice(key) {
+    dlg.querySelector('.body').innerHTML = '<div class="empty">加载中…</div>';
+    if (dlg.showModal) dlg.showModal();
+    fetch('/admin/api/stats?days=90&device=' + encodeURIComponent(key), { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      var visits = j.visits || [];
+      if (!visits.length) { dlg.querySelector('.body').innerHTML = '<div class="empty">没有记录</div>'; return; }
+      var byPid = {}; (j.events || []).forEach(function (e) { (byPid[e.pid] = byPid[e.pid] || []).push(e); });
+      var latest = visits[0];
+      var opened = visits.filter(isOpened);
+      var total = visits.reduce(function (a, v) { return a + (v.active_ms || 0); }, 0);
+      var ips = []; visits.forEach(function (v) { if (v.ip && ips.indexOf(v.ip) < 0) ips.push(v.ip); });
+      var places = []; visits.forEach(function (v) { var p = [v.city, v.region, v.country].filter(Boolean).join(', '); if (p && places.indexOf(p) < 0) places.push(p); });
+      var head = '<div class="tl">' + rowsHtml([
+        ['概况', '首次 ' + when(visits[visits.length - 1].ts) + ' · 最近 ' + when(latest.ts) + ' · 共 ' + visits.length + ' 次加载，其中 ' + opened.length + ' 次真正打开 · 累计有效停留 ' + secs(total)],
+        ['全部 IP', ips.join('，')], ['到过的位置', places.join('；')]
+      ].filter(function (x) { return x[1]; })) + '<div style="margin-top:8px"></div>' + rowsHtml(deviceRows(latest)) + '</div>';
+      var list = visits.map(function (v) {
+        return '<h3>' + esc(when(v.ts)) + ' · ' + esc([v.city, v.country].filter(Boolean).join(', ')) + (v.ip && v.ip !== latest.ip ? ' · <code>' + esc(v.ip) + '</code>' : '') + '</h3><div class="tl">' + timeline(v, byPid[v.pid]) + '</div>';
+      }).join('');
+      dlg.querySelector('.body').innerHTML = head + '<h3 style="margin-top:18px">每次访问</h3>' + list;
+    }).catch(function () { dlg.querySelector('.body').innerHTML = '<div class="empty">加载失败</div>'; });
+  }
+  app.addEventListener('click', function (e) { var r = e.target.closest('tr.dv'); if (r) openDevice(r.getAttribute('data-key')); });
 
   function load() {
     status.textContent = '加载中…';
@@ -125,6 +218,7 @@
       .then(function (x) {
         if (!x.ok) throw new Error(x.j && x.j.message || '加载失败');
         render(x.j);
+        loadDevices();
         status.textContent = '已更新 ' + when(x.j.now) + '（多伦多时间）· 数据保留 90 天 · 不含你自己标记为不统计的设备';
       })
       .catch(function (e) { status.textContent = ''; app.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; });
@@ -141,29 +235,10 @@
     row.after(tr);
     fetch('/admin/api/stats?visit=' + encodeURIComponent(pid), { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       var v = j.visit || {};
-      var lines = ['<div><span class="t">0 秒</span>打开 ' + esc(v.path || '/') + (v.hash ? esc(v.hash) : '') + (v.ref ? '，来自 ' + esc(v.ref) : '') + '</div>'];
-      (j.events || []).forEach(function (ev) {
-        var t = '<span class="t">' + Math.round(ev.at_ms / 1000) + ' 秒</span>';
-        if (ev.kind === 'section') lines.push('<div>' + t + '看到 ' + esc(SECTION[ev.name] || ev.name) + '</div>');
-        else lines.push('<div>' + t + '点击「' + esc(ev.name) + '」' + (ev.section ? '（' + esc(SECTION[ev.section] || ev.section) + '）' : '') + (ev.href ? ' → ' + esc(ev.href) : '') + '</div>');
-      });
-      lines.push('<div><span class="t">' + Math.round((v.total_ms || 0) / 1000) + ' 秒</span>最后一次心跳 · 有效停留 ' + esc(secs(v.active_ms)) + ' · 最远滚动 ' + esc(v.max_scroll) + '%</div>');
-      if (j.sameVisitorToday && j.sameVisitorToday.length > 1) lines.push('<div style="margin-top:6px;color:var(--muted)">同一访客今天共浏览 ' + j.sameVisitorToday.length + ' 次</div>');
-      var inf = parseInfo(v);
-      var dev = [
-        ['IP', v.ip], ['ASN', v.asn ? 'AS' + v.asn + (v.asorg ? ' ' + v.asorg : '') : v.asorg],
-        ['位置', [v.city, v.region, v.postal, v.country].filter(Boolean).join(', ') + (v.lat != null ? '（约 ' + v.lat + ', ' + v.lon + '，城市级精度）' : '')],
-        ['设备', [DEVICE[v.device] || v.device, inf.model, v.os, inf.platformVersion && '系统版本 ' + inf.platformVersion, inf.arch].filter(Boolean).join(' · ')],
-        ['浏览器', inf.brands || v.browser],
-        ['硬件', [inf.cores && inf.cores + ' 核 CPU', inf.mem && '≥' + inf.mem + ' GB 内存', inf.touchPoints ? inf.touchPoints + ' 点触控' : '无触控'].filter(Boolean).join(' · ')],
-        ['屏幕', [v.screen, inf.availW && '可用 ' + inf.availW + '×' + inf.availH, v.viewport && '窗口 ' + v.viewport, 'DPR ' + v.dpr, inf.colorDepth && inf.colorDepth + ' 位色', inf.orientation, inf.hdr && 'HDR', inf.wideGamut && 'P3 广色域'].filter(Boolean).join(' · ')],
-        ['网络', [inf.net, inf.downlink && inf.downlink + ' Mbps', inf.rtt != null && inf.rtt !== undefined && 'RTT ' + inf.rtt + ' ms', inf.saveData && '省流量', inf.http, inf.tls].filter(Boolean).join(' · ')],
-        ['语言', [inf.langs || v.lang, v.tz].filter(Boolean).join(' · ')],
-        ['偏好', [v.dark ? '设备深色' : '设备浅色', inf.reducedMotion && '减少动画', inf.standalone && '已添加到主屏', inf.pdf && '内置 PDF'].filter(Boolean).join(' · ')],
-        ['UA', v.ua]
-      ].filter(function (x) { return x[1]; });
-      lines.push('<div style="margin-top:8px"></div>' + dev.map(function (x) { return '<div><span class="t">' + esc(x[0]) + '</span>' + esc(x[1]) + '</div>'; }).join(''));
-      lines.push('<div style="margin-top:6px;color:var(--muted)">' + esc([v.tz, v.colo && 'Cloudflare 节点 ' + v.colo, v.viewport && '窗口 ' + v.viewport, v.dpr && 'DPR ' + v.dpr, v.touch ? '触屏' : '', v.dark ? '设备深色' : '设备浅色'].filter(Boolean).join(' · ')) + '</div>');
+      var html = timeline(v, j.events);
+      if (j.sameVisitorToday && j.sameVisitorToday.length > 1) html += '<div style="margin-top:6px;color:var(--muted)">同一访客今天共浏览 ' + j.sameVisitorToday.length + ' 次</div>';
+      html += '<div style="margin-top:8px"></div>' + rowsHtml(deviceRows(v));
+      var lines = [html];
       tr.innerHTML = '<td colspan="8"><div class="tl">' + lines.join('') + '</div></td>';
     }).catch(function () { tr.innerHTML = '<td colspan="8"><div class="tl">加载失败</div></td>'; });
   });
