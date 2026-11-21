@@ -63,6 +63,14 @@ code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
 .scroll{overflow-x:auto}
 .tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--elevated);color:var(--muted);margin:1px 2px 1px 0}
 .err{margin-top:24px;padding:16px 18px;border:.5px solid var(--border);border-radius:14px;background:var(--surface)}
+tr.dv{cursor:pointer}
+tr.dv:hover td{background:var(--elevated)}
+.tag.warn{background:#5a3b1c;color:#f3d9b1}
+dialog#device{width:min(920px,calc(100% - 24px));max-height:calc(100% - 40px);border:.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--ink);padding:18px 20px}
+dialog#device::backdrop{background:rgb(0 0 0/.5)}
+.dhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.dhead h2{font-size:17px;margin:0}
+dialog#device h3{font-size:13px;font-weight:600;margin:14px 0 4px}
 @media(max-width:640px){.grid{grid-template-columns:1fr}.kpi .v{font-size:23px}}
 </style>
 </head>
@@ -85,6 +93,10 @@ code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
   <p class="note" id="status">加载中…</p>
   <div id="app"></div>
 </div>
+<dialog id="device" aria-label="设备详情">
+  <form method="dialog" class="dhead"><h2>设备详情</h2><button class="btn" type="submit">关闭</button></form>
+  <div class="body"></div>
+</dialog>
 <script src="/admin/app.js" defer></script>
 </body>
 </html>

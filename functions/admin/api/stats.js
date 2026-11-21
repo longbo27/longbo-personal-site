@@ -21,21 +21,26 @@ export async function onRequestGet({ request, env }) {
     return json({ visit: pv, events: ev.results, sameVisitorToday: same.results });
   }
 
+  if (url.searchParams.has('devices') || url.searchParams.has('device')) return devices(db, url);
+
   const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days')) || 7));
   const now = Date.now();
   const from = now - days * 86400000;
   const prevFrom = from - days * 86400000;
-  const W = 'ts >= ?1';
+  // A view counts as opened once anything happened on screen; app link previews and browser preloads never get there.
+  const OPEN = "(sections != '' OR total_ms > 0 OR active_ms > 0)";
+  const W = `ts >= ?1 AND ${OPEN}`;
 
   const q = (sql, ...b) => db.prepare(sql).bind(...b);
   const top = (col, limit = 12) => q(`SELECT COALESCE(${col}, '') AS k, COUNT(*) AS n, COUNT(DISTINCT vid) AS u FROM pageviews WHERE ${W} GROUP BY k ORDER BY n DESC LIMIT ${limit}`, from);
   const kpiSql = `SELECT COUNT(*) AS pv, COUNT(DISTINCT vid) AS uv, COALESCE(AVG(active_ms),0) AS avg_active, COALESCE(AVG(max_scroll),0) AS avg_scroll,
       COALESCE(AVG(CASE WHEN active_ms >= 10000 OR max_scroll >= 50 OR clicks > 0 THEN 1.0 ELSE 0 END),0) AS engaged,
-      COALESCE(SUM(clicks),0) AS clicks FROM pageviews WHERE ts >= ?1 AND ts < ?2`;
+      COALESCE(SUM(clicks),0) AS clicks FROM pageviews WHERE ts >= ?1 AND ts < ?2 AND ${OPEN}`;
 
   const stmts = {
     kpi: q(kpiSql, from, now + 1),
     prev: q(kpiSql, prevFrom, from),
+    preloads: q(`SELECT COUNT(*) AS n FROM pageviews WHERE ts >= ?1 AND NOT ${OPEN}`, from),
     live: q('SELECT COUNT(*) AS pv, COUNT(DISTINCT vid) AS uv FROM pageviews WHERE ts >= ?1', now - 30 * 60000),
     daily: q(`SELECT day AS k, COUNT(*) AS n, COUNT(DISTINCT vid) AS u FROM pageviews WHERE ${W} GROUP BY day ORDER BY day`, from),
     hours: q(`SELECT hour AS k, COUNT(*) AS n FROM pageviews WHERE ${W} GROUP BY hour ORDER BY hour`, from),
@@ -59,13 +64,55 @@ export async function onRequestGet({ request, env }) {
     ips: top('ip', 15),
     consent: top("COALESCE(consent,'none')"),
     visits: q(`SELECT pid, ts, vid, ip, info, path, ref_host, utm_source, utm_campaign, country, region, city, asorg, device, browser, os, screen, lang, site_lang, theme,
-      max_scroll, active_ms, total_ms, clicks, sections, consent FROM pageviews WHERE ${W} ORDER BY ts DESC LIMIT 150`, from)
+      max_scroll, active_ms, total_ms, clicks, sections, consent FROM pageviews WHERE ts >= ?1 ORDER BY ts DESC LIMIT 150`, from)
   };
 
   const keys = Object.keys(stmts);
   const results = await db.batch(keys.map((k) => stmts[k]));
   const out = { days, from, now, tz: 'America/Toronto' };
   keys.forEach((k, i) => { out[k] = results[i].results; });
-  out.kpi = out.kpi[0]; out.prev = out.prev[0]; out.live = out.live[0];
+  out.preloads = out.preloads[0].n; out.kpi = out.kpi[0]; out.prev = out.prev[0]; out.live = out.live[0];
   return json(out);
+}
+
+// Devices: views from the same network (IPv4 address, or IPv6 /64, which phones rotate within) and the
+// same browser identity are grouped as one device. Anonymous views fall back to the daily visitor id.
+function deviceKey(r) {
+  if (!r.ip) return 'v:' + (r.vid || r.pid);
+  const ip = r.ip.includes(':') ? r.ip.split(':').slice(0, 4).join(':') + '::/64' : r.ip;
+  return ip + '|' + (r.ua || '');
+}
+const opened = (r) => !!(r.sections || r.total_ms > 0 || r.active_ms > 0);
+
+async function devices(db, url) {
+  const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days')) || 7));
+  const from = Date.now() - days * 86400000;
+  const rows = (await db.prepare(`SELECT * FROM pageviews WHERE ts >= ? ORDER BY ts DESC LIMIT 5000`).bind(from).all()).results;
+  const wanted = url.searchParams.get('device');
+  if (wanted) {
+    const mine = rows.filter((r) => deviceKey(r) === wanted);
+    const pids = mine.slice(0, 90).map((r) => r.pid);
+    let events = [];
+    if (pids.length) {
+      events = (await db.prepare(`SELECT pid, at_ms, kind, name, href, section FROM events WHERE pid IN (${pids.map(() => '?').join(',')}) ORDER BY pid, at_ms, id`).bind(...pids).all()).results;
+    }
+    return json({ key: wanted, visits: mine, events });
+  }
+  const map = new Map();
+  for (const r of rows) {
+    const k = deviceKey(r);
+    let d = map.get(k);
+    if (!d) {
+      d = { key: k, last: r.ts, first: r.ts, views: 0, opened: 0, active_ms: 0, max_scroll: 0, clicks: 0, ips: new Set(), days: new Set(),
+        latest: { ip: r.ip, country: r.country, region: r.region, city: r.city, postal: r.postal, asorg: r.asorg, device: r.device, os: r.os, browser: r.browser,
+          screen: r.screen, dpr: r.dpr, lang: r.lang, tz: r.tz, info: r.info, ua: r.ua, consent: r.consent } };
+      map.set(k, d);
+    }
+    d.first = Math.min(d.first, r.ts);
+    d.views++; if (opened(r)) d.opened++;
+    d.active_ms += r.active_ms || 0; d.max_scroll = Math.max(d.max_scroll, r.max_scroll || 0); d.clicks += r.clicks || 0;
+    if (r.ip) d.ips.add(r.ip); d.days.add(r.day);
+  }
+  const list = [...map.values()].map((d) => ({ ...d, ips: [...d.ips].slice(0, 10), days: d.days.size })).sort((a, b) => b.last - a.last).slice(0, 300);
+  return json({ days, devices: list });
 }

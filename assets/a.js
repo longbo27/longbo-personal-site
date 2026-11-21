@@ -56,7 +56,9 @@
     availW: screen.availWidth, availH: screen.availHeight,
     reducedMotion: mq('(prefers-reduced-motion: reduce)'), hdr: mq('(dynamic-range: high)'), wideGamut: mq('(color-gamut: p3)'),
     standalone: mq('(display-mode: standalone)') || nav.standalone === true,
-    pdf: nav.pdfViewerEnabled === true, cookies: nav.cookieEnabled === true
+    pdf: nav.pdfViewerEnabled === true, cookies: nav.cookieEnabled === true,
+    // Loaded in the background (app link preview, browser preloading) rather than opened on screen.
+    hidden: doc.visibilityState !== 'visible' || doc.prerendering === true
   };
   // Consent: when the notice is switched on in the dashboard, details wait for the visitor's choice.
   // 'none' = notice off; 'pending' = notice shown, no answer yet; 'yes' = accepted; 'anon' = anonymous only.
@@ -186,6 +188,8 @@
     if (doc.visibilityState !== 'visible' || mode === 'pending') return;
     if (queue.length || active !== lastSent) { lastSent = active; flush(false); }
   }, 15000);
+  // First report a few seconds in, so short real visits are told apart from background preloads.
+  setTimeout(function () { if (mode !== 'pending' && doc.visibilityState === 'visible') { lastSent = active; flush(false); } }, 4000);
   addEventListener('pagehide', function () { flush(true); });
   doc.addEventListener('visibilitychange', function () { if (doc.visibilityState === 'hidden') flush(true); });
 })();
