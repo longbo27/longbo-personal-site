@@ -57,8 +57,9 @@ export async function onRequestGet({ request, env }) {
     theme: top("theme || CASE WHEN dark = 1 THEN ' (device dark)' ELSE ' (device light)' END"),
     paths: top('path', 10),
     ips: top('ip', 15),
+    consent: top("COALESCE(consent,'none')"),
     visits: q(`SELECT pid, ts, vid, ip, info, path, ref_host, utm_source, utm_campaign, country, region, city, asorg, device, browser, os, screen, lang, site_lang, theme,
-      max_scroll, active_ms, total_ms, clicks, sections FROM pageviews WHERE ${W} ORDER BY ts DESC LIMIT 150`, from)
+      max_scroll, active_ms, total_ms, clicks, sections, consent FROM pageviews WHERE ${W} ORDER BY ts DESC LIMIT 150`, from)
   };
 
   const keys = Object.keys(stmts);

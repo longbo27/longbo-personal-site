@@ -23,7 +23,8 @@ const SCHEMA = [
     active_ms INTEGER DEFAULT 0,
     total_ms INTEGER DEFAULT 0,
     clicks INTEGER DEFAULT 0,
-    sections TEXT DEFAULT ''
+    sections TEXT DEFAULT '',
+    consent TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS pv_ts ON pageviews(ts)`,
   `CREATE INDEX IF NOT EXISTS pv_day ON pageviews(day)`,
@@ -37,12 +38,18 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS ev_pid ON events(pid)`,
   `CREATE INDEX IF NOT EXISTS ev_ts ON events(ts)`,
-  `CREATE TABLE IF NOT EXISTS salts (day TEXT PRIMARY KEY, salt TEXT NOT NULL)`
+  `CREATE TABLE IF NOT EXISTS salts (day TEXT PRIMARY KEY, salt TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`
 ];
+
+// Columns added after the first release; ALTER fails harmlessly when they already exist.
+const MIGRATIONS = [`ALTER TABLE pageviews ADD COLUMN consent TEXT`];
 
 let ready = null;
 export function ensureSchema(db) {
-  if (!ready) ready = db.batch(SCHEMA.map((s) => db.prepare(s))).catch((e) => { ready = null; throw e; });
+  if (!ready) ready = db.batch(SCHEMA.map((s) => db.prepare(s)))
+    .then(() => Promise.all(MIGRATIONS.map((m) => db.prepare(m).run().catch(() => null))))
+    .catch((e) => { ready = null; throw e; });
   return ready;
 }
 
@@ -122,4 +129,12 @@ export async function prune(db) {
     db.prepare('DELETE FROM events WHERE ts < ?').bind(cutoff),
     db.prepare('DELETE FROM pageviews WHERE ts < ?').bind(cutoff)
   ]);
+}
+
+export async function getSetting(db, key, fallback) {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first();
+  return row ? row.value : fallback;
+}
+export function setSetting(db, key, value) {
+  return db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(value)).run();
 }

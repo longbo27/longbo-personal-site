@@ -110,6 +110,7 @@
     html += list('屏幕分辨率', 'CSS 像素', d.screens);
     html += list('设备语言', 'navigator.language', d.langs);
     html += list('站点语言 / 外观', '首次加载时显示的语言与主题，以及设备的深浅色偏好', d.siteLang.map(function (r) { return { k: r.k === 'zh' ? '中文' : 'English', n: r.n, u: r.u }; }).concat(d.theme.map(function (r) { return { k: (r.k || '').replace('champagne', '香槟金').replace('night', '曜金').replace('(device dark)', '（设备深色）').replace('(device light)', '（设备浅色）'), n: r.n, u: r.u }; })));
+    html += list('统计同意情况', '仅在开启访客提示弹窗时有区分；“未询问”表示当时弹窗是关闭的', d.consent, function (r) { return { yes: '同意完整统计', anon: '仅匿名（不含 IP 与设备）', none: '未询问' }[r.k] || r.k; });
     html += list('页面', '', d.paths);
     html += visitsTable(d.visits);
     html += '</div>';
@@ -188,5 +189,24 @@
     try { if (on) localStorage.removeItem('lx-notrack'); else localStorage.setItem('lx-notrack', '1'); } catch (e) {}
     syncNt();
   });
-  syncNt(); syncRange(); load();
+  var ct = document.getElementById('consentToggle');
+  function showConsent(on) {
+    ct.setAttribute('aria-pressed', String(on));
+    ct.textContent = '访客提示弹窗：' + (on ? '已开启' : '已关闭');
+  }
+  function loadSettings() {
+    fetch('/admin/api/settings', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (j) { if (typeof j.consent === 'boolean') showConsent(j.consent); }).catch(function () { ct.textContent = '访客提示弹窗：读取失败'; });
+  }
+  ct.addEventListener('click', function () {
+    var next = ct.getAttribute('aria-pressed') !== 'true';
+    ct.disabled = true;
+    fetch('/admin/api/settings', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ consent: next }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { showConsent(!!j.consent); status.textContent = j.consent ? '已开启访客提示弹窗，约 30 秒内对新访客生效。' : '已关闭访客提示弹窗，约 30 秒内生效。'; })
+      .catch(function () { status.textContent = '切换失败，请重试'; })
+      .then(function () { ct.disabled = false; });
+  });
+
+  syncNt(); syncRange(); loadSettings(); load();
 })();

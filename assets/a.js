@@ -58,19 +58,67 @@
     standalone: mq('(display-mode: standalone)') || nav.standalone === true,
     pdf: nav.pdfViewerEnabled === true, cookies: nav.cookieEnabled === true
   };
+  // Consent: when the notice is switched on in the dashboard, details wait for the visitor's choice.
+  // 'none' = notice off; 'pending' = notice shown, no answer yet; 'yes' = accepted; 'anon' = anonymous only.
+  var mode = 'pending'; // until the setting is known, anything sent early is anonymous
   var pvSent = false;
-  function sendPv() { if (pvSent) return; pvSent = true; send(pv, false); }
-  if (nav.userAgentData && nav.userAgentData.getHighEntropyValues) {
-    var timer = setTimeout(sendPv, 400);
+  function sendPv() {
+    if (pvSent) return;
+    pvSent = true;
+    pv.consent = mode === 'pending' ? 'anon' : mode;
+    if (pv.consent === 'anon') delete pv.info;
+    send(pv, false);
+  }
+
+  var hintsReady = new Promise(function (resolve) {
+    if (!(nav.userAgentData && nav.userAgentData.getHighEntropyValues)) return resolve();
+    setTimeout(resolve, 400);
     nav.userAgentData.getHighEntropyValues(['model', 'platformVersion', 'architecture', 'bitness', 'fullVersionList']).then(function (h) {
       pv.info.model = h.model || '';
       pv.info.platformVersion = h.platformVersion || '';
       pv.info.arch = (h.architecture || '') + (h.bitness ? '-' + h.bitness : '');
       pv.info.mobile = !!h.mobile;
       pv.info.brands = (h.fullVersionList || []).filter(function (x) { return !/Not.?A.?Brand/i.test(x.brand); }).map(function (x) { return x.brand + ' ' + x.version; }).join(', ');
-      clearTimeout(timer); sendPv();
-    }, function () { clearTimeout(timer); sendPv(); });
-  } else sendPv();
+      resolve();
+    }, resolve);
+  });
+
+  var configReady = new Promise(function (resolve) {
+    var done = false;
+    function finish(on) { if (done) return; done = true; resolve(!!on); }
+    setTimeout(function () { finish(false); }, 1500);
+    try {
+      fetch('/api/config', { credentials: 'omit' }).then(function (r) { return r.json(); }).then(function (c) { finish(c && c.consent); }, function () { finish(false); });
+    } catch (e) { finish(false); }
+  });
+
+  var banner = doc.getElementById('consent');
+  function choose(choice) {
+    try { localStorage.setItem('lx-consent', choice); } catch (e) {}
+    mode = choice;
+    if (banner) banner.hidden = true;
+    hintsReady.then(sendPv);
+  }
+  configReady.then(function (on) {
+    mode = 'none';
+    if (on) {
+      var saved = null;
+      try { saved = localStorage.getItem('lx-consent'); } catch (e) {}
+      if (saved === 'yes' || saved === 'anon') mode = saved;
+      else if (banner) {
+        mode = 'pending';
+        banner.hidden = false;
+        banner.addEventListener('click', function (e) {
+          var b = e.target.closest('[data-consent],[data-open-privacy]');
+          if (!b) return;
+          if (b.hasAttribute('data-open-privacy')) { var d = doc.getElementById('privacy'); if (d && d.showModal) d.showModal(); return; }
+          choose(b.getAttribute('data-consent') === 'yes' ? 'yes' : 'anon');
+        });
+        return;
+      }
+    }
+    hintsReady.then(sendPv);
+  });
 
   // 2) Engagement events, batched
   var queue = [];
@@ -135,7 +183,7 @@
   // Heartbeat every 15 s while visible, so long reads are not lost, and a final beacon on leave.
   var lastSent = -1;
   setInterval(function () {
-    if (doc.visibilityState !== 'visible') return;
+    if (doc.visibilityState !== 'visible' || mode === 'pending') return;
     if (queue.length || active !== lastSent) { lastSent = active; flush(false); }
   }, 15000);
   addEventListener('pagehide', function () { flush(true); });

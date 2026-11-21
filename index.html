@@ -130,6 +130,14 @@ dialog p{font-size:15px;color:var(--muted);margin:0 0 12px}
 dialog form{margin-top:18px}
 dialog .pill{border:0;cursor:pointer;font-family:var(--font)}
 
+/* Visit-statistics notice (switched on from the dashboard) */
+.consent{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(560px,calc(100% - 32px));z-index:40;background:var(--surface);border:.5px solid var(--border);border-radius:20px;padding:18px 20px}
+.consent[hidden]{display:none}
+.consent p{margin:0;font-size:14px;line-height:1.6;color:var(--muted)}
+.consent p strong{color:var(--ink);font-weight:600}
+.consent-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-top:14px}
+.consent .pill{border:0;cursor:pointer;font-family:var(--font)}
+
 /* Chinese: no negative tracking on CJK, a little more leading. */
 html[lang="zh-CN"] h2,html[lang="zh-CN"] .maxim p{letter-spacing:0}
 html[lang="zh-CN"] .maxim p{line-height:1.35}
@@ -306,9 +314,19 @@ html[lang="zh-CN"] .lede{line-height:1.8}
   <p data-zh="我用自建的统计了解本站如何被阅读：浏览了哪些板块、点击了哪些链接、滚动多远、停留多久、从哪个网站来。">I keep self-hosted statistics to see how the site is read: which sections are viewed, which links are clicked, how far a page is scrolled, how long it is read, and the referring site.</p>
   <p data-zh="同时会记录你的 IP 地址，以及由此推断的大致位置（城市、邮编区域）和网络运营商，还有浏览器公开提供的设备信息：设备型号与系统、浏览器、屏幕、CPU 核数与内存档位、网络类型、语言和时区。">This includes your IP address and what it suggests (approximate city, postal area and network provider), plus device details your browser makes available: device model and system, browser, screen, CPU cores and memory class, connection type, language and time zone.</p>
   <p data-zh="这些数据只有我能看到，不用于广告，不与任何人共享，也不会试图把你和真实姓名对应起来，90 天后自动删除。浏览器开启“全局隐私控制”或“请勿追踪”时，不做任何统计。如需查询或删除与你有关的记录，可通过 LinkedIn 联系我。">Only I can see this data. It is not used for advertising, not shared, and not matched to anyone's real name. It is deleted after 90 days. If your browser sends Global Privacy Control or Do Not Track, nothing is recorded. To ask about or remove records about you, contact me on LinkedIn.</p>
-  <p data-zh="你选择的语言和外观只保存在你自己的浏览器里。外部链接适用各自网站的隐私规则。">Your language and appearance choices stay in your own browser. External links follow their own privacy practices.</p>
+  <p data-zh="如果页面底部出现“访问统计”提示，选择“仅匿名统计”后，不会记录你的 IP 地址、网络运营商、精确位置和设备信息。">If a visit-statistics notice appears at the bottom of the page and you choose "Anonymous only", your IP address, network provider, precise location and device details are not recorded.</p>
+  <p data-zh="你选择的语言、外观和统计偏好只保存在你自己的浏览器里。外部链接适用各自网站的隐私规则。">Your language, appearance and statistics choices stay in your own browser. External links follow their own privacy practices.</p>
   <form method="dialog"><button class="pill" type="submit" data-zh="知道了">Close</button></form>
 </dialog>
+
+<div class="consent" id="consent" role="region" aria-label="Visit statistics" data-aria-zh="访问统计" hidden>
+  <p><strong data-zh="访问统计。">Visit statistics.</strong> <span data-zh="本站会记录浏览情况，以及 IP 地址与设备信息，用于了解网站如何被阅读。你也可以只允许匿名统计。">This site records how it is read, including your IP address and device details. You can allow anonymous statistics only.</span></p>
+  <div class="consent-actions">
+    <button class="pill" type="button" data-consent="yes" data-zh="同意">Accept</button>
+    <button class="link" type="button" data-consent="anon" data-zh="仅匿名统计">Anonymous only</button>
+    <button class="link" type="button" data-open-privacy data-zh="详情">Details</button>
+  </div>
+</div>
 
 <script src="/assets/site.js" defer></script>
 <script src="/assets/a.js" defer></script>

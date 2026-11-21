@@ -59,24 +59,27 @@ export async function onRequestPost({ request, env, waitUntil }) {
       if (os === 'Windows' && pi.platformVersion) os = parseInt(pi.platformVersion, 10) >= 13 ? 'Windows 11' : 'Windows 10';
       const utm = body.utm && typeof body.utm === 'object' ? body.utm : {};
       const ref = clip(body.ref, 300);
+      // A visitor who chose "anonymous only" in the notice: no IP, network, precise location, UA or device details.
+      const anon = body.consent === 'anon';
       const selfHost = url.hostname.replace(/^www\./, '');
       await db.prepare(`INSERT OR IGNORE INTO pageviews
         (pid, ts, day, hour, vid, ip, asn, postal, lat, lon, ua, info, path, hash, ref, ref_host, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-         country, region, city, tz, asorg, colo, device, browser, os, screen, viewport, dpr, touch, dark, lang, site_lang, theme)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+         country, region, city, tz, asorg, colo, device, browser, os, screen, viewport, dpr, touch, dark, lang, site_lang, theme, consent)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
         body.pid, now, day, hour, vid,
-        clip(ip, 64), Number(cf.asn) || null, clip(cf.postalCode, 16),
-        Number.isFinite(Number(cf.latitude)) && cf.latitude !== undefined ? Number(cf.latitude) : null,
-        Number.isFinite(Number(cf.longitude)) && cf.longitude !== undefined ? Number(cf.longitude) : null,
-        clip(ua, 400), info(body.info, cf),
+        anon ? null : clip(ip, 64), anon ? null : Number(cf.asn) || null, anon ? null : clip(cf.postalCode, 16),
+        !anon && cf.latitude !== undefined && Number.isFinite(Number(cf.latitude)) ? Number(cf.latitude) : null,
+        !anon && cf.longitude !== undefined && Number.isFinite(Number(cf.longitude)) ? Number(cf.longitude) : null,
+        anon ? null : clip(ua, 400), anon ? null : info(body.info, cf),
         clip(body.path, 200) || '/', clip(body.hash, 40),
         ref && refHost(ref, selfHost) ? ref : null, ref ? refHost(ref, selfHost) : null,
         clip(utm.source, 100), clip(utm.medium, 100), clip(utm.campaign, 100), clip(utm.term, 100), clip(utm.content, 100),
-        clip(cf.country, 4), clip(cf.region, 80), clip(cf.city, 80), clip(cf.timezone || body.tz, 60), clip(cf.asOrganization, 120), clip(cf.colo, 8),
+        clip(cf.country, 4), clip(cf.region, 80), clip(cf.city, 80), clip(cf.timezone || body.tz, 60), anon ? null : clip(cf.asOrganization, 120), clip(cf.colo, 8),
         device, browser, os,
         `${int(body.sw, 0, 20000)}×${int(body.sh, 0, 20000)}`, `${int(body.vw, 0, 20000)}×${int(body.vh, 0, 20000)}`,
         Math.min(8, Math.max(0, Number(body.dpr) || 1)), body.touch ? 1 : 0, body.dark ? 1 : 0,
-        clip(body.lang, 20), body.sitelang === 'zh' ? 'zh' : 'en', clip(body.theme, 20)
+        clip(body.lang, 20), body.sitelang === 'zh' ? 'zh' : 'en', clip(body.theme, 20),
+        body.consent === 'yes' ? 'yes' : anon ? 'anon' : 'none'
       ).run();
       if (Math.random() < 0.02) waitUntil(prune(db));
       return done();
