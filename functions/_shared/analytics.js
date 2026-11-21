@@ -105,6 +105,8 @@ export function parseUA(ua) {
   else if (/Windows/.test(ua)) os = 'Windows';
   else if (/Mac OS X|Macintosh/.test(ua)) os = 'macOS';
   else if (/Linux/.test(ua)) os = 'Linux';
+  // Since iOS 26, Safari freezes the OS in the UA at 18.x; the real version is in Version/.
+  if (/^iOS 18\.[67]$/.test(os) && (m = ua.match(/Version\/(\d+)\.(\d+)/)) && +m[1] >= 26) os = `iOS ${m[1]}.${m[2]}`;
 
   // In-app browsers first: they wrap Safari/Chrome and would otherwise be mislabelled.
   let browser = 'Other';
