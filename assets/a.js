@@ -1,7 +1,7 @@
 /* First-party, cookieless analytics for longbo.cloud.
-   No cookies, no local or session storage, no fingerprinting, no third parties.
-   Each page load gets a random id that lives only in memory; the server turns the
-   connection into a daily-rotating anonymous visitor hash and never stores the IP.
+   No cookies, no local or session storage, no canvas/WebGL/audio fingerprinting, no third parties.
+   Each page load gets a random id that lives only in memory. The server stores the IP
+   address and the device details below for 90 days, as the site's privacy note says.
    Browsers that send Global Privacy Control or Do Not Track are not counted. */
 (function () {
   var nav = navigator, doc = document, root = doc.documentElement;
@@ -36,7 +36,7 @@
   var mq = function (s) { try { return window.matchMedia(s).matches; } catch (e) { return false; } };
   var tz = '';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
-  send({
+  var pv = {
     t: 'pv', pid: pid,
     path: location.pathname, hash: location.hash.slice(0, 40),
     ref: doc.referrer || '', utm: utm,
@@ -44,7 +44,33 @@
     lang: nav.language || '', tz: tz,
     dark: mq('(prefers-color-scheme: dark)'), touch: mq('(pointer: coarse)'),
     theme: root.getAttribute('data-theme') || '', sitelang: root.getAttribute('data-lang-pending') === 'zh' || root.lang === 'zh-CN' ? 'zh' : 'en'
-  }, false);
+  };
+  // Device details the browser exposes without any prompt.
+  var c = nav.connection || {};
+  pv.info = {
+    langs: (nav.languages || []).slice(0, 6).join(','),
+    cores: nav.hardwareConcurrency || null, mem: nav.deviceMemory || null,
+    touchPoints: nav.maxTouchPoints || 0, platform: nav.platform || '',
+    net: c.effectiveType || '', downlink: c.downlink || null, rtt: c.rtt || null, saveData: !!c.saveData,
+    colorDepth: screen.colorDepth || null, orientation: (screen.orientation && screen.orientation.type) || '',
+    availW: screen.availWidth, availH: screen.availHeight,
+    reducedMotion: mq('(prefers-reduced-motion: reduce)'), hdr: mq('(dynamic-range: high)'), wideGamut: mq('(color-gamut: p3)'),
+    standalone: mq('(display-mode: standalone)') || nav.standalone === true,
+    pdf: nav.pdfViewerEnabled === true, cookies: nav.cookieEnabled === true
+  };
+  var pvSent = false;
+  function sendPv() { if (pvSent) return; pvSent = true; send(pv, false); }
+  if (nav.userAgentData && nav.userAgentData.getHighEntropyValues) {
+    var timer = setTimeout(sendPv, 400);
+    nav.userAgentData.getHighEntropyValues(['model', 'platformVersion', 'architecture', 'bitness', 'fullVersionList']).then(function (h) {
+      pv.info.model = h.model || '';
+      pv.info.platformVersion = h.platformVersion || '';
+      pv.info.arch = (h.architecture || '') + (h.bitness ? '-' + h.bitness : '');
+      pv.info.mobile = !!h.mobile;
+      pv.info.brands = (h.fullVersionList || []).filter(function (x) { return !/Not.?A.?Brand/i.test(x.brand); }).map(function (x) { return x.brand + ' ' + x.version; }).join(', ');
+      clearTimeout(timer); sendPv();
+    }, function () { clearTimeout(timer); sendPv(); });
+  } else sendPv();
 
   // 2) Engagement events, batched
   var queue = [];
@@ -102,6 +128,7 @@
   }, 1000);
 
   function flush(beacon) {
+    sendPv();
     var evs = queue.splice(0, queue.length);
     send({ t: 'ev', pid: pid, ev: evs, scroll: maxScroll, active: active, total: t() }, beacon);
   }

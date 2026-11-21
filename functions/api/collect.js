@@ -1,8 +1,26 @@
 // POST /api/collect: receives page views and engagement events from /assets/a.js.
-// Stores no IP address and sets no cookie. Always answers 204 so the page never waits on it.
+// Stores the IP address and device details (disclosed in the privacy note); sets no cookie. Always answers 204 so the page never waits on it.
 import { ensureSchema, localParts, clip, dailySalt, visitorHash, parseUA, BOT_RE, refHost, prune } from '../_shared/analytics.js';
 
 const done = () => new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+// Device details from the page plus connection details from Cloudflare, kept as a small JSON blob.
+function info(src, cf) {
+  const out = {};
+  if (src && typeof src === 'object') {
+    for (const [k, v] of Object.entries(src).slice(0, 40)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+      else if (typeof v === 'boolean') out[k] = v;
+      else if (typeof v === 'string' && v) out[k] = v.slice(0, 200);
+    }
+  }
+  if (cf.httpProtocol) out.http = String(cf.httpProtocol);
+  if (cf.tlsVersion) out.tls = String(cf.tlsVersion);
+  if (cf.regionCode) out.regionCode = String(cf.regionCode);
+  if (cf.metroCode) out.metro = String(cf.metroCode);
+  if (cf.isEUCountry) out.eu = true;
+  return JSON.stringify(out).slice(0, 3000);
+}
+
 const ALLOWED_KINDS = new Set(['section', 'click']);
 const int = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0; };
 
@@ -36,15 +54,21 @@ export async function onRequestPost({ request, env, waitUntil }) {
       const salt = await dailySalt(db, day);
       const vid = await visitorHash(salt, ip, ua, url.host);
       const cf = request.cf || {};
-      const { device, os, browser } = parseUA(ua);
+      let { device, os, browser } = parseUA(ua);
+      const pi = body.info && typeof body.info === 'object' ? body.info : {};
+      if (os === 'Windows' && pi.platformVersion) os = parseInt(pi.platformVersion, 10) >= 13 ? 'Windows 11' : 'Windows 10';
       const utm = body.utm && typeof body.utm === 'object' ? body.utm : {};
       const ref = clip(body.ref, 300);
       const selfHost = url.hostname.replace(/^www\./, '');
       await db.prepare(`INSERT OR IGNORE INTO pageviews
-        (pid, ts, day, hour, vid, path, hash, ref, ref_host, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+        (pid, ts, day, hour, vid, ip, asn, postal, lat, lon, ua, info, path, hash, ref, ref_host, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
          country, region, city, tz, asorg, colo, device, browser, os, screen, viewport, dpr, touch, dark, lang, site_lang, theme)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
         body.pid, now, day, hour, vid,
+        clip(ip, 64), Number(cf.asn) || null, clip(cf.postalCode, 16),
+        Number.isFinite(Number(cf.latitude)) && cf.latitude !== undefined ? Number(cf.latitude) : null,
+        Number.isFinite(Number(cf.longitude)) && cf.longitude !== undefined ? Number(cf.longitude) : null,
+        clip(ua, 400), info(body.info, cf),
         clip(body.path, 200) || '/', clip(body.hash, 40),
         ref && refHost(ref, selfHost) ? ref : null, ref ? refHost(ref, selfHost) : null,
         clip(utm.source, 100), clip(utm.medium, 100), clip(utm.campaign, 100), clip(utm.term, 100), clip(utm.content, 100),

@@ -63,17 +63,20 @@
       '<div class="chart">' + bars + '</div><div class="axis"><span>' + esc(cells[0] ? cells[0].k : '') + '</span><span>' + esc(cells.length ? cells[cells.length - 1].k : '') + '</span></div></section>';
   }
 
+  function parseInfo(v) { try { return JSON.parse(v.info || '{}'); } catch (e) { return {}; } }
+  function model(v) { return parseInfo(v).model || ''; }
+
   function visitsTable(rows) {
     if (!rows.length) return '<section class="card wide"><h2>最近访问</h2><div class="empty">暂无数据</div></section>';
     var tr = rows.map(function (v) {
       var place = flag(v.country) + [v.city, v.region, v.country].filter(Boolean).join(', ');
       var src = v.utm_source ? 'utm: ' + v.utm_source + (v.utm_campaign ? ' / ' + v.utm_campaign : '') : (v.ref_host || '直接访问');
       var secsSeen = (v.sections || '').split(',').filter(Boolean).map(function (s) { return '<span class="tag">' + esc(SECTION[s] || s) + '</span>'; }).join('');
-      return '<tr class="v" data-pid="' + esc(v.pid) + '"><td>' + esc(when(v.ts)) + '</td><td>' + esc(place || '未知') + (v.asorg ? '<br><span class="n" style="color:var(--muted)">' + esc(v.asorg) + '</span>' : '') + '</td>' +
-        '<td>' + esc((DEVICE[v.device] || v.device) + ' · ' + v.os + ' · ' + v.browser) + '<br><span style="color:var(--muted)">' + esc(v.screen + ' · ' + (v.lang || '') + ' · 站点' + (v.site_lang === 'zh' ? '中文' : 'EN')) + '</span></td>' +
+      return '<tr class="v" data-pid="' + esc(v.pid) + '"><td>' + esc(when(v.ts)) + '</td><td>' + esc(place || '未知') + (v.ip ? '<br><code>' + esc(v.ip) + '</code>' : '') + (v.asorg ? '<br><span class="n" style="color:var(--muted)">' + esc(v.asorg) + '</span>' : '') + '</td>' +
+        '<td>' + esc((DEVICE[v.device] || v.device) + (model(v) ? '（' + model(v) + '）' : '') + ' · ' + v.os + ' · ' + v.browser) + '<br><span style="color:var(--muted)">' + esc(v.screen + ' · ' + (v.lang || '') + ' · 站点' + (v.site_lang === 'zh' ? '中文' : 'EN')) + '</span></td>' +
         '<td>' + esc(src) + '</td><td>' + esc(secs(v.active_ms)) + '</td><td>' + esc(v.max_scroll + '%') + '</td><td>' + esc(v.clicks) + '</td><td>' + secsSeen + '</td></tr>';
     }).join('');
-    return '<section class="card wide"><h2>最近访问（点一行看完整轨迹）</h2><p class="sub">每行是一次页面浏览。访客标识每天更换，不能跨天追踪同一个人。</p><div class="scroll"><table><thead><tr><th>时间</th><th>地区 / 网络</th><th>设备</th><th>来源</th><th>停留</th><th>滚动</th><th>点击</th><th>看过的板块</th></tr></thead><tbody>' + tr + '</tbody></table></div></section>';
+    return '<section class="card wide"><h2>最近访问（点一行看完整轨迹）</h2><p class="sub">每行是一次页面浏览。“独立访客”按每天更换的标识计算；跨天同一个人可通过 IP 大致判断。</p><div class="scroll"><table><thead><tr><th>时间</th><th>地区 / IP / 网络</th><th>设备</th><th>来源</th><th>停留</th><th>滚动</th><th>点击</th><th>看过的板块</th></tr></thead><tbody>' + tr + '</tbody></table></div></section>';
   }
 
   function render(d) {
@@ -97,9 +100,10 @@
     html += list('有效停留时长', '只计页面可见且有操作的时间', ordered(d.time, ['<5s', '5–15s', '15–30s', '30–60s', '1–3m', '3m+']));
     html += list('来源网站', '按来访的上一个网站', d.referrers);
     html += list('推广链接 UTM', 'source / medium / campaign，例如 ?utm_source=linkedin', d.utm);
-    html += list('国家 / 地区', 'Cloudflare 按 IP 推断，IP 本身不保存', d.countries, function (r) { return flag(r.k) + (r.k || '未知'); });
+    html += list('国家 / 地区', 'Cloudflare 按 IP 推断', d.countries, function (r) { return flag(r.k) + (r.k || '未知'); });
     html += list('城市', '城市级，可能有偏差', d.cities);
     html += list('网络运营商 / 机构', '访客所用网络的归属（ASN），如运营商、学校或公司', d.networks);
+    html += list('IP 地址', '浏览最多的 IP（同一 IP 可能是一家公司或学校的多人）', d.ips);
     html += list('设备类型', '', d.devices, function (r) { return DEVICE[r.k] || r.k || '未知'; });
     html += list('浏览器', '', d.browsers);
     html += list('操作系统', '', d.os);
@@ -144,6 +148,20 @@
       });
       lines.push('<div><span class="t">' + Math.round((v.total_ms || 0) / 1000) + ' 秒</span>最后一次心跳 · 有效停留 ' + esc(secs(v.active_ms)) + ' · 最远滚动 ' + esc(v.max_scroll) + '%</div>');
       if (j.sameVisitorToday && j.sameVisitorToday.length > 1) lines.push('<div style="margin-top:6px;color:var(--muted)">同一访客今天共浏览 ' + j.sameVisitorToday.length + ' 次</div>');
+      var inf = parseInfo(v);
+      var dev = [
+        ['IP', v.ip], ['ASN', v.asn ? 'AS' + v.asn + (v.asorg ? ' ' + v.asorg : '') : v.asorg],
+        ['位置', [v.city, v.region, v.postal, v.country].filter(Boolean).join(', ') + (v.lat != null ? '（约 ' + v.lat + ', ' + v.lon + '，城市级精度）' : '')],
+        ['设备', [DEVICE[v.device] || v.device, inf.model, v.os, inf.platformVersion && '系统版本 ' + inf.platformVersion, inf.arch].filter(Boolean).join(' · ')],
+        ['浏览器', inf.brands || v.browser],
+        ['硬件', [inf.cores && inf.cores + ' 核 CPU', inf.mem && '≥' + inf.mem + ' GB 内存', inf.touchPoints ? inf.touchPoints + ' 点触控' : '无触控'].filter(Boolean).join(' · ')],
+        ['屏幕', [v.screen, inf.availW && '可用 ' + inf.availW + '×' + inf.availH, v.viewport && '窗口 ' + v.viewport, 'DPR ' + v.dpr, inf.colorDepth && inf.colorDepth + ' 位色', inf.orientation, inf.hdr && 'HDR', inf.wideGamut && 'P3 广色域'].filter(Boolean).join(' · ')],
+        ['网络', [inf.net, inf.downlink && inf.downlink + ' Mbps', inf.rtt != null && inf.rtt !== undefined && 'RTT ' + inf.rtt + ' ms', inf.saveData && '省流量', inf.http, inf.tls].filter(Boolean).join(' · ')],
+        ['语言', [inf.langs || v.lang, v.tz].filter(Boolean).join(' · ')],
+        ['偏好', [v.dark ? '设备深色' : '设备浅色', inf.reducedMotion && '减少动画', inf.standalone && '已添加到主屏', inf.pdf && '内置 PDF'].filter(Boolean).join(' · ')],
+        ['UA', v.ua]
+      ].filter(function (x) { return x[1]; });
+      lines.push('<div style="margin-top:8px"></div>' + dev.map(function (x) { return '<div><span class="t">' + esc(x[0]) + '</span>' + esc(x[1]) + '</div>'; }).join(''));
       lines.push('<div style="margin-top:6px;color:var(--muted)">' + esc([v.tz, v.colo && 'Cloudflare 节点 ' + v.colo, v.viewport && '窗口 ' + v.viewport, v.dpr && 'DPR ' + v.dpr, v.touch ? '触屏' : '', v.dark ? '设备深色' : '设备浅色'].filter(Boolean).join(' · ')) + '</div>');
       tr.innerHTML = '<td colspan="8"><div class="tl">' + lines.join('') + '</div></td>';
     }).catch(function () { tr.innerHTML = '<td colspan="8"><div class="tl">加载失败</div></td>'; });

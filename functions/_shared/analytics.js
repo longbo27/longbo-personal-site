@@ -11,6 +11,7 @@ const SCHEMA = [
     day TEXT NOT NULL,
     hour INTEGER,
     vid TEXT,
+    ip TEXT, asn INTEGER, postal TEXT, lat REAL, lon REAL, ua TEXT, info TEXT,
     path TEXT, hash TEXT,
     ref TEXT, ref_host TEXT,
     utm_source TEXT, utm_medium TEXT, utm_campaign TEXT, utm_term TEXT, utm_content TEXT,
