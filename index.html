@@ -25,7 +25,7 @@
 <meta name="twitter:image:alt" content="Longbo Xian">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="canonical" href="https://longbo.cloud/">
-<script>(function(){var d=document.documentElement,t=null,l=null;try{t=localStorage.getItem("lx-theme");l=localStorage.getItem("lx-lang")}catch(e){}if(t==="champagne"||t==="night")d.setAttribute("data-theme",t);if(l==="zh"||(!l&&/^zh/i.test(navigator.language||"")))d.setAttribute("data-lang-pending","zh")})();</script>
+<script>(function(){var d=document.documentElement,t=null,l=null;try{t=localStorage.getItem("lx-theme");l=localStorage.getItem("lx-lang")}catch(e){}if(t!=="champagne"&&t!=="night")t=window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches?"champagne":"night";d.setAttribute("data-theme",t);if(l==="zh"||(!l&&/^zh/i.test((navigator.languages&&navigator.languages[0])||navigator.language||"")))d.setAttribute("data-lang-pending","zh")})();</script>
 <style>
 /* Longbo Xian. "Ink & Porcelain", gold edition: Gold night (default) and Champagne.
    System font only, hairlines instead of shadows, no idle motion, no third-party requests. */
@@ -302,86 +302,14 @@ html[lang="zh-CN"] .lede{line-height:1.8}
 <dialog id="privacy" aria-labelledby="privacy-title">
   <span class="label" data-zh="隐私">Privacy</span>
   <h2 id="privacy-title" data-zh="少即是多。">Less, by design.</h2>
-  <p data-zh="本站没有表单、广告追踪、第三方分析或嵌入组件，不收集你的个人信息。">This site has no forms, advertising trackers, third-party analytics or embedded widgets. It collects no personal information.</p>
-  <p data-zh="你选择的语言和外观只保存在你自己的浏览器里，不会发送给我。">Your language and appearance choices stay in your own browser. They are not sent to me.</p>
-  <p data-zh="托管服务商可能为传输与安全处理常规连接数据，例如 IP 地址。外部链接适用各自网站的隐私规则。">The hosting provider may process routine connection data, such as an IP address, to deliver and secure the site. External links follow their own privacy practices.</p>
+  <p data-zh="本站没有表单、广告追踪、第三方分析或嵌入组件，也不使用 Cookie。">This site has no forms, advertising trackers, third-party analytics, embedded widgets or cookies.</p>
+  <p data-zh="我用自建的匿名统计了解本站如何被阅读：浏览了哪些板块、点击了哪些链接、滚动多远、停留多久、从哪个网站来，以及大致城市、网络运营商、设备、浏览器、屏幕尺寸和语言。">I keep simple, self-hosted statistics to see how the site is read: which sections are viewed, which links are clicked, how far a page is scrolled, how long it is read, the referring site, and the approximate city, network provider, device, browser, screen size and language.</p>
+  <p data-zh="IP 地址不会被保存：它只用于生成一个每天更换、无法还原的匿名标识。不做指纹识别，不识别你是谁，数据不与任何人共享，90 天后删除。浏览器开启“全局隐私控制”或“请勿追踪”时，不做任何统计。">IP addresses are never stored. They are used only to make an anonymous identifier that changes every day and cannot be reversed. There is no fingerprinting, no attempt to identify you, no sharing, and data is deleted after 90 days. If your browser sends Global Privacy Control or Do Not Track, nothing is counted.</p>
+  <p data-zh="你选择的语言和外观只保存在你自己的浏览器里。外部链接适用各自网站的隐私规则。">Your language and appearance choices stay in your own browser. External links follow their own privacy practices.</p>
   <form method="dialog"><button class="pill" type="submit" data-zh="知道了">Close</button></form>
 </dialog>
 
-<script>
-(function () {
-  var root = document.documentElement;
-  var store = {
-    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-  };
-
-  // Language: English is written in the markup, Chinese lives in data-zh.
-  var textNodes = document.querySelectorAll('[data-zh]');
-  var ariaNodes = document.querySelectorAll('[data-aria-zh]');
-  textNodes.forEach(function (el) { el.setAttribute('data-en', el.innerHTML); });
-  ariaNodes.forEach(function (el) { el.setAttribute('data-aria-en', el.getAttribute('aria-label') || ''); });
-  var langButtons = document.querySelectorAll('[data-set-lang]');
-
-  function setLang(lang, save) {
-    var zh = lang === 'zh';
-    root.lang = zh ? 'zh-CN' : 'en';
-    textNodes.forEach(function (el) {
-      var zhText = el.getAttribute('data-zh');
-      if (zh) {
-        // Keep trailing icons: replace only the leading text when the element holds an svg.
-        var svg = el.querySelector('svg');
-        el.innerHTML = '';
-        el.appendChild(document.createTextNode(zhText));
-        if (svg) { el.appendChild(document.createTextNode(' ')); el.appendChild(svg); }
-      } else {
-        el.innerHTML = el.getAttribute('data-en');
-      }
-    });
-    ariaNodes.forEach(function (el) {
-      el.setAttribute('aria-label', zh ? el.getAttribute('data-aria-zh') : el.getAttribute('data-aria-en'));
-    });
-    langButtons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-set-lang') === lang)); });
-    updateThemeLabel();
-    if (save) store.set('lx-lang', lang);
-  }
-
-  // Appearance: Gold night by default, Champagne on request.
-  var themeButton = document.getElementById('theme');
-  var themeMeta = document.querySelector('meta[name="theme-color"]');
-  function updateThemeLabel() {
-    var night = root.getAttribute('data-theme') !== 'champagne';
-    var zh = root.lang === 'zh-CN';
-    themeButton.setAttribute('aria-label', night ? (zh ? '切换到香槟金' : 'Switch to Champagne') : (zh ? '切换到曜金' : 'Switch to Gold night'));
-  }
-  function setTheme(theme, save) {
-    root.setAttribute('data-theme', theme);
-    themeMeta.setAttribute('content', theme === 'champagne' ? '#F4ECDC' : '#11120E');
-    updateThemeLabel();
-    if (save) store.set('lx-theme', theme);
-  }
-
-  langButtons.forEach(function (b) {
-    b.addEventListener('click', function () { setLang(b.getAttribute('data-set-lang'), true); });
-  });
-  themeButton.addEventListener('click', function () {
-    setTheme(root.getAttribute('data-theme') === 'champagne' ? 'night' : 'champagne', true);
-  });
-
-  var dialog = document.getElementById('privacy');
-  var privacyButton = document.getElementById('privacy-open');
-  if (dialog && typeof dialog.showModal === 'function') {
-    privacyButton.hidden = false;
-    privacyButton.addEventListener('click', function () { dialog.showModal(); });
-  }
-
-  document.getElementById('lang').hidden = false;
-  themeButton.hidden = false;
-  document.getElementById('year').textContent = String(new Date().getFullYear());
-
-  setTheme(root.getAttribute('data-theme') || 'night', false);
-  if (root.getAttribute('data-lang-pending') === 'zh') { root.removeAttribute('data-lang-pending'); setLang('zh', false); }
-})();
-</script>
+<script src="/assets/site.js" defer></script>
+<script src="/assets/a.js" defer></script>
 </body>
 </html>
