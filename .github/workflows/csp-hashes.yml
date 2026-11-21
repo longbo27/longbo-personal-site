@@ -1,0 +1,19 @@
+name: CSP hashes
+
+on:
+  push:
+    paths: ["**.html", "_headers", "scripts/check_csp_hashes.py", ".github/workflows/csp-hashes.yml"]
+  pull_request:
+    paths: ["**.html", "_headers", "scripts/check_csp_hashes.py", ".github/workflows/csp-hashes.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check script-src hashes in _headers
+        run: python3 scripts/check_csp_hashes.py
